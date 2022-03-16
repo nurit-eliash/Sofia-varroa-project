@@ -1,0 +1,106 @@
+---
+title: "EAG_varroa"
+author: "Nurit Eliash"
+date: "3/16/2022"
+output:
+  html_document:
+    code_folding: hide
+    theme: cerulean
+    toc: yes
+    toc_depth: 5
+    toc_float:
+      collapsed: yes
+      df_print: paged
+---
+<style type="text/css">
+  body{
+  font-size: 12pt;
+}
+</style>
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load libraries
+```{r libraries ,  message=FALSE, warning=FALSE, echo=FALSE}
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(ggpubr)
+library(ggthemes)
+library(stats) 
+library(moments)
+library(grid)
+library(formattable)
+library(gridExtra)
+library(ggsignif)
+library(hrbrthemes)
+library(plotrix)
+library(rstatix)
+```
+
+עצרתי כאן 
+16/3/2022
+אני מחכה לקובץ של כל הנתונים מסופיה
+בהמשך:
+לעשות anova repeated measures
+עם כל החומרים
+
+ואז להכין את הגרפים. אחד לכל חומר. 
+
+
+## Load data
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+data <- read.csv("/Users/nuriteliash/Documents/GitHub/Sofia-varroa-project/data_EAG.csv")
+```
+
+## example for one volatile
+### EAG stat analysis
+we followed this tutorial for [Repeated Measures ANOVA in R](https://www.datanovia.com/en/lessons/repeated-measures-anova-in-r/)
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+# as each of the volatile compounds was tested on all legs (1-10), we need to consider this effect in the ANOVA statistics. therefore we gonna anlays the data using one-way Anova repeated measures. 
+# the tested effect (x) is the chemical stimuli, the response (y) is the electrophysiological response measured in mV, and the responding leg is a repeated measure.
+
+# first we gonna check the ANOVA assumptions:
+# (1) Normality: the dependent variable should be approximately normally distributed in each cell of the design. This can be checked using the Shapiro-Wilk normality test (shapiro_test()
+
+
+normality <- data %>%
+  group_by(leg) %>%
+  shapiro_test(Response)
+
+normality
+# looks like only for leg VF6 the response doesnt distribute normally 
+# however, as we have enough replicates (n=10), it is ok to contniue with ANOVA
+
+res.aov <- anova_test(data = data, dv = Response, wid = leg, within = volatile)
+get_anova_table(res.aov)
+```
+
+### EAG plot
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+# first make a table with se and mean
+data.summary <- data %>%
+  group_by(stimuli) %>%
+  summarise(
+    se = std.error(Response, na.rm = TRUE),
+    Response = mean(Response))
+
+data.summary
+
+# plot the response to the stimuli
+plot <- ggplot(data.summary,aes(x=stimuli, y=Response, group = 1)) +
+        geom_line(color="black") +
+        geom_point(shape=21, color="black", fill="#69b3a2", size=3) +
+        theme_classic() +
+        ggtitle("Varroa foreleg response (mV) to stimuli of ___") +
+        xlab("Stimuli amount (microgram)") +
+        ylab("Response (mV)") +
+        geom_errorbar(aes(ymin=Response-se, ymax=Response+se), width=.2,
+                      position=position_dodge(0.05), color="grey")
+```
+
+
+
