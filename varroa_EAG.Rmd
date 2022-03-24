@@ -53,7 +53,7 @@ library(rstatix)
 
 ## Load data
 ```{r message=FALSE, warning=FALSE, echo=FALSE}
-data <- read.csv("/Users/nuriteliash/Documents/GitHub/Sofia-varroa-project/data_EAG.csv")
+data <- read.csv("/Users/nuriteliash/Documents/GitHub/Sofia-varroa-project/EAG_data_all.csv")
 ```
 
 ## example for one volatile
@@ -69,7 +69,7 @@ we followed this tutorial for [Repeated Measures ANOVA in R](https://www.datanov
 
 normality <- data %>%
   group_by(leg) %>%
-  shapiro_test(Response)
+  shapiro_test(response)
 
 normality
 # looks like only for leg VF6 the response doesnt distribute normally 
