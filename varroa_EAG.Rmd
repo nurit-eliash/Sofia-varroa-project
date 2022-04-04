@@ -1,5 +1,5 @@
 ---
-title: "EAG_varroa"
+title: "Varroa EAG response to various essential oils"
 author: "Nurit Eliash"
 date: "3/16/2022"
 output:
@@ -24,7 +24,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ## Load libraries
-```{r libraries ,  message=FALSE, warning=FALSE, echo=FALSE}
+```{r libraries, echo=TRUE, message=FALSE, warning=FALSE}
 library(dplyr)
 library(tidyverse)
 library(ggplot2)
@@ -39,48 +39,125 @@ library(ggsignif)
 library(hrbrthemes)
 library(plotrix)
 library(rstatix)
+library(car)
+library(plotly)
 ```
 
-עצרתי כאן 
-16/3/2022
-אני מחכה לקובץ של כל הנתונים מסופיה
-בהמשך:
-לעשות anova repeated measures
-עם כל החומרים
-
-ואז להכין את הגרפים. אחד לכל חומר. 
-
-
 ## Load data
-```{r message=FALSE, warning=FALSE, echo=FALSE}
+```{r echo=TRUE, message=FALSE, warning=FALSE}
 data <- read.csv("/Users/nuriteliash/Documents/GitHub/Sofia-varroa-project/EAG_data_all.csv")
 ```
 
-## example for one volatile
-### EAG stat analysis
-we followed this tutorial for [Repeated Measures ANOVA in R](https://www.datanovia.com/en/lessons/repeated-measures-anova-in-r/)
-```{r message=FALSE, warning=FALSE, echo=FALSE}
-# as each of the volatile compounds was tested on all legs (1-10), we need to consider this effect in the ANOVA statistics. therefore we gonna anlays the data using one-way Anova repeated measures. 
-# the tested effect (x) is the chemical stimuli, the response (y) is the electrophysiological response measured in mV, and the responding leg is a repeated measure.
+## EAG stat analysis
+the tested effect (x) is the Essential oil "EO" dissolved in acetone, the "response" (y) is the electrophysiological response of the leg measured in mV. Each leg was stimulated by different stimuli in the following order:Air > Air > Air > Acetone (solvent) > 0.1 > 0.25 > 0.5 > 1 > 2.5 > 5 > Acetone (solvent) > Air
 
-# first we gonna check the ANOVA assumptions:
-# (1) Normality: the dependent variable should be approximately normally distributed in each cell of the design. This can be checked using the Shapiro-Wilk normality test (shapiro_test()
+the response was normalized.... [please complete in here:)]
 
+to test the difference in response amplitude to the different stimuli, we will use One way ANOVA. then a post-hoc Tukey test, to see which of the stimuli are significantly differnet.
+we followed this tutorial for [ANOVA in R](http://www.sthda.com/english/wiki/two-way-anova-test-in-r)
 
+### data summary
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# our data contains: 
+str(data)
+table(data$stimuli, data$EO)
+```
+We have tested a total of 9 essential oils, using 83 legs. Each essential oil was tested on at least 7 different legs.
+
+### Prior to analysis, we gonna check the ANOVA assumptions:
+#### (1) Outliers
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+Outliers <- data %>% 
+  group_by(stimuli,EO) %>%
+  identify_outliers(response)
+
+Outliers
+
+# plot it to detect outliers by specific leg
+#data %>% 
+  #ggboxplot(x = "stimuli", y = "response", color = "leg")
+```
+
+#### (2) Normality:
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#the dependent variable should be approximately normally distributed in each cell of the design. This can be checked using the Shapiro-Wilk normality test (shapiro_test()
 normality <- data %>%
-  group_by(leg) %>%
+  group_by(stimuli,EO) %>%
   shapiro_test(response)
 
 normality
-# looks like only for leg VF6 the response doesnt distribute normally 
-# however, as we have enough replicates (n=10), it is ok to contniue with ANOVA
 
-res.aov <- anova_test(data = data, dv = Response, wid = leg, within = volatile)
-get_anova_table(res.aov)
+# looks like that for a few EO x stimuli combinations  the response doesnt distribute normally  (p<0.05)
+# however, as we have enough replicates (n=10), it is ok to contniue with ANOVA
 ```
 
-### EAG plot
-```{r message=FALSE, warning=FALSE, echo=FALSE}
+#### (3) Homogneity of variance 
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Build the linear model
+model <- lapply(split(data, data$EO), function(i){
+  lm(response ~ stimuli, data = i)
+})
+
+# now you can Create a QQ plot of residuals of each EO, for example, essential oil EO4309:
+ggqqplot(residuals(model$EO4309))
+
+plot(model$EO4309, 1)
+```
+
+in my opinion, if you detect an outlier, you should take out the entire leg, and then check again the normality  
+
+### One-Way Anova
+as we wish to know the difference in response to stimuli, in each EO, we will use one way Anova, after spliting the data per EO:
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+anova_perEO <- lapply(split(data, data$EO), function(i){
+  anova(lm(response ~ stimuli, data = i))
+})
+anova_perEO
+```
+
+### Post hoc Tukey test
+to test the significant difference of each stimuli concentration from the solvent 
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+tukey <- data %>% 
+  group_by(EO) %>% 
+  tukey_hsd(response ~ stimuli)
+tukey
+```
+
+## EAG plot
+for some reason, i cannot add the leg ID to the hovering text in the box plot, but i can do it in the dot-plot.
+so in order to detect outliers, we can detect them in the first plot (the box plot), then identify their ID leg in the dot plot:)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# first sort the order of stimuli
+data$stimuli <- factor(data$stimuli,levels = c("acet_before", "0.1", "0.25", "0.5", "1", "2.5", "5","acet_after"))
+
+box <- ggplot(data, aes(x = stimuli, y = response)) +
+  geom_boxplot(aes(colour = EO)) +
+  facet_wrap( ~ EO) +
+  theme_linedraw() +
+        ggtitle("Varroa foreleg response to different essential oils") +
+        xlab("Stimuli amount (microgram)") +
+        ylab("Normalized response (%)") +
+        theme(axis.text.x=element_text(angle=45, hjust=1))
+  
+ggplotly(box, tooltip = "leg")
+
+
+dot <- ggplot(data, aes(x = stimuli, y = response, colour = EO, leg=leg)) +
+  geom_point() +
+  facet_wrap( ~ EO) +
+  theme_linedraw() +
+        ggtitle("Varroa foreleg response to different essential oils") +
+        xlab("Stimuli amount (microgram)") +
+        ylab("Normalized response (%)") +
+        theme(axis.text.x=element_text(angle=45, hjust=1))
+ggplotly(dot, tooltip = c("leg","response"))
+```
+
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+script i didnt use:
+############
 # first make a table with se and mean
 data.summary <- data %>%
   group_by(stimuli) %>%
@@ -89,6 +166,18 @@ data.summary <- data %>%
     Response = mean(Response))
 
 data.summary
+
+ggplot(data, aes(x = stimuli, y = response, colour = EO)) +
+  geom_boxplot() +
+  facet_wrap( ~ EO) +
+  theme_linedraw() +
+        ggtitle("Varroa foreleg response
+to different essential oils") +
+        xlab("Stimuli amount (microgram)") +
+        ylab("Normalized response (%)") 
+
+
+
 
 # plot the response to the stimuli
 plot <- ggplot(data.summary,aes(x=stimuli, y=Response, group = 1)) +
@@ -100,7 +189,3 @@ plot <- ggplot(data.summary,aes(x=stimuli, y=Response, group = 1)) +
         ylab("Response (mV)") +
         geom_errorbar(aes(ymin=Response-se, ymax=Response+se), width=.2,
                       position=position_dodge(0.05), color="grey")
-```
-
-
-
