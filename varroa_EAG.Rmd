@@ -41,6 +41,7 @@ library(plotrix)
 library(rstatix)
 library(car)
 library(plotly)
+library(postHoc)
 ```
 
 ## Load data
@@ -51,12 +52,12 @@ data <- read.csv("/Users/nuriteliash/Documents/GitHub/Sofia-varroa-project/EAG_d
 ## EAG stat analysis
 the tested effect (x) is the Essential oil "EO" dissolved in acetone, the "response" (y) is the electrophysiological response of the leg measured in mV. Each leg was stimulated by different stimuli in the following order:Air > Air > Air > Acetone (solvent) > 0.1 > 0.25 > 0.5 > 1 > 2.5 > 5 > Acetone (solvent) > Air
 
-the response was normalized.... [please complete in here:)]
+the response was normalized.... [please complete in here, by copy-pasting from the method section:)]
 
 to test the difference in response amplitude to the different stimuli, we will use One way ANOVA. then a post-hoc Tukey test, to see which of the stimuli are significantly differnet.
 we followed this tutorial for [ANOVA in R](http://www.sthda.com/english/wiki/two-way-anova-test-in-r)
 
-### data summary
+### Data summary
 ```{r echo=TRUE, message=FALSE, warning=FALSE}
 # our data contains: 
 str(data)
@@ -67,68 +68,8 @@ We have tested a total of 9 essential oils, using 83 legs. Each essential oil wa
 ### Prior to analysis, we gonna check the ANOVA assumptions:
 #### (1) Outliers
 ```{r echo=TRUE, message=FALSE, warning=FALSE}
-Outliers <- data %>% 
-  group_by(stimuli,EO) %>%
-  identify_outliers(response)
-
-Outliers
-
 # plot it to detect outliers by specific leg
-#data %>% 
-  #ggboxplot(x = "stimuli", y = "response", color = "leg")
-```
-
-#### (2) Normality:
-```{r echo=TRUE, message=FALSE, warning=FALSE}
-#the dependent variable should be approximately normally distributed in each cell of the design. This can be checked using the Shapiro-Wilk normality test (shapiro_test()
-normality <- data %>%
-  group_by(stimuli,EO) %>%
-  shapiro_test(response)
-
-normality
-
-# looks like that for a few EO x stimuli combinations  the response doesnt distribute normally  (p<0.05)
-# however, as we have enough replicates (n=10), it is ok to contniue with ANOVA
-```
-
-#### (3) Homogneity of variance 
-```{r echo=TRUE, message=FALSE, warning=FALSE}
-# Build the linear model
-model <- lapply(split(data, data$EO), function(i){
-  lm(response ~ stimuli, data = i)
-})
-
-# now you can Create a QQ plot of residuals of each EO, for example, essential oil EO4309:
-ggqqplot(residuals(model$EO4309))
-
-plot(model$EO4309, 1)
-```
-
-in my opinion, if you detect an outlier, you should take out the entire leg, and then check again the normality  
-
-### One-Way Anova
-as we wish to know the difference in response to stimuli, in each EO, we will use one way Anova, after spliting the data per EO:
-```{r echo=TRUE, message=FALSE, warning=FALSE}
-anova_perEO <- lapply(split(data, data$EO), function(i){
-  anova(lm(response ~ stimuli, data = i))
-})
-anova_perEO
-```
-
-### Post hoc Tukey test
-to test the significant difference of each stimuli concentration from the solvent 
-```{r echo=TRUE, message=FALSE, warning=FALSE}
-tukey <- data %>% 
-  group_by(EO) %>% 
-  tukey_hsd(response ~ stimuli)
-tukey
-```
-
-## EAG plot
-for some reason, i cannot add the leg ID to the hovering text in the box plot, but i can do it in the dot-plot.
-so in order to detect outliers, we can detect them in the first plot (the box plot), then identify their ID leg in the dot plot:)
-```{r echo=TRUE, message=FALSE, warning=FALSE}
-# first sort the order of stimuli
+# first sort the order of stimuli:
 data$stimuli <- factor(data$stimuli,levels = c("acet_before", "0.1", "0.25", "0.5", "1", "2.5", "5","acet_after"))
 
 box <- ggplot(data, aes(x = stimuli, y = response)) +
@@ -141,51 +82,93 @@ box <- ggplot(data, aes(x = stimuli, y = response)) +
         theme(axis.text.x=element_text(angle=45, hjust=1))
   
 ggplotly(box, tooltip = "leg")
+```
 
+Remove outliered legs: "VF71", "VF1", "VF2", "VF4", "VF77", "VF82", "VF24", "VF26", "VF37", "VF39", "VF46", "VF49", "VF17", "VF19", "VF50", "VF62"
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+data <- data %>%
+  dplyr::filter(!leg %in% c("VF71", "VF1", "VF2", "VF4", "VF77", "VF82", "VF24", "VF26", "VF37", "VF39", "VF46", "VF49", "VF17", "VF19", "VF50", "VF62"))
+```
 
+After excluding the outliers, we proceed with the rest of the tests:
+
+#### (2) Normality:
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#the dependent variable should be approximately normally distributed in each cell of the design. This can be checked using the Shapiro-Wilk normality test (shapiro_test()
+normality <- data %>%
+  group_by(stimuli,EO) %>%
+  shapiro_test(response)
+
+normality %>%
+  dplyr::filter(p<0.05)
+```
+For the above four EO x stimuli combinations the response dont distribute normally (p<0.05)
+
+#### (3) Homogneity of variance 
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Build the linear model
+model <- lapply(split(data, data$EO), function(i){
+  lm(response ~ stimuli, data = i)
+  })
+
+# now you can Create a QQ plot of residuals of each EO, for example, essential oil EO4309:
+ggqqplot(residuals(model$EO4309))
+
+plot(model$EO4309, 1)
+```
+
+After checking the 3 assumptions, we decided to go for a non-parametric test, to test the significant difference of each stimuli concentration from the solvent.
+
+we used a non-parametric post hoc test for multiple comparisons.
+
+### Post hoc non-parametric test for all pairwise comparisons, with Benjamini-Hochberg p-value correction
+#### Post hoc Kruskal-Wallis rank sum test
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+KW <- lapply(split(data, data$EO), function(i){
+  posthocKW(i$response, i$stimuli, padjust = "BH")
+})
+
+KW$EO4309$PvaluesMatrix
+KW$EO4444$PvaluesMatrix
+KW$EO4891$PvaluesMatrix
+KW$EO4899$PvaluesMatrix
+KW$EO5068$PvaluesMatrix
+KW$EO5663$PvaluesMatrix
+KW$EO5714$PvaluesMatrix
+KW$EO5749$PvaluesMatrix
+KW$EO5763$PvaluesMatrix
+```
+
+#### Post hoc Wilcoxon test
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+Wilcoxon <- lapply(split(data, data$EO), function(i){
+  pairwise.wilcox.test(i$response, g = i$stimuli, p.adjust.method = "BH")
+})
+
+Wilcoxon$EO4309$p.value
+Wilcoxon$EO4444$p.value
+Wilcoxon$EO4891$p.value
+Wilcoxon$EO4899$p.value
+Wilcoxon$EO5068$p.value
+Wilcoxon$EO5663$p.value
+Wilcoxon$EO5714$p.value
+Wilcoxon$EO5749$p.value
+Wilcoxon$EO5763$p.value
+```
+
+## EAG plot
+for some reason, i cannot add the leg ID to the hovering text in the box plot, but i can do it in the dot-plot.
+so in order to detect outliers, we can detect them in the first plot (the box plot), then identify their ID leg in the dot plot:)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
 dot <- ggplot(data, aes(x = stimuli, y = response, colour = EO, leg=leg)) +
-  geom_point() +
+  geom_point() + 
   facet_wrap( ~ EO) +
   theme_linedraw() +
         ggtitle("Varroa foreleg response to different essential oils") +
         xlab("Stimuli amount (microgram)") +
         ylab("Normalized response (%)") +
-        theme(axis.text.x=element_text(angle=45, hjust=1))
-ggplotly(dot, tooltip = c("leg","response"))
+        theme(axis.text.x=element_text(angle=45, hjust=1)) +
+        stat_summary(aes(group=EO), fun=mean, geom="line", colour="black") 
+
+ggplotly(dot, tooltip = c("leg","response")) 
 ```
-
-
-```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
-script i didnt use:
-############
-# first make a table with se and mean
-data.summary <- data %>%
-  group_by(stimuli) %>%
-  summarise(
-    se = std.error(Response, na.rm = TRUE),
-    Response = mean(Response))
-
-data.summary
-
-ggplot(data, aes(x = stimuli, y = response, colour = EO)) +
-  geom_boxplot() +
-  facet_wrap( ~ EO) +
-  theme_linedraw() +
-        ggtitle("Varroa foreleg response
-to different essential oils") +
-        xlab("Stimuli amount (microgram)") +
-        ylab("Normalized response (%)") 
-
-
-
-
-# plot the response to the stimuli
-plot <- ggplot(data.summary,aes(x=stimuli, y=Response, group = 1)) +
-        geom_line(color="black") +
-        geom_point(shape=21, color="black", fill="#69b3a2", size=3) +
-        theme_classic() +
-        ggtitle("Varroa foreleg response (mV) to stimuli of ___") +
-        xlab("Stimuli amount (microgram)") +
-        ylab("Response (mV)") +
-        geom_errorbar(aes(ymin=Response-se, ymax=Response+se), width=.2,
-                      position=position_dodge(0.05), color="grey")
