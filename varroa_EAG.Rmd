@@ -19,10 +19,6 @@ output:
 </style>
 
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
 ## Load libraries
 ```{r libraries, echo=TRUE, message=FALSE, warning=FALSE}
 library(dplyr)
@@ -42,6 +38,7 @@ library(rstatix)
 library(car)
 library(plotly)
 library(postHoc)
+knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ## Load data
@@ -154,6 +151,69 @@ Wilcoxon$EO5663$p.value
 Wilcoxon$EO5714$p.value
 Wilcoxon$EO5749$p.value
 Wilcoxon$EO5763$p.value
+```
+
+try Post hoc Wilcoxon test, for specific comparisons, and correct with BH
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+Wilcoxon <- lapply(split(data, data$EO), function(i){
+  pairwise.wilcox.test(i$response, g = i$stimuli, p.adjust.method = "BH")
+})
+
+
+#for each EO, compare each dose, to the avg of "acet_before","acet_after", then correct using BH for each EO. so the correction is only for these 6 comparisons, per EO 
+
+EOs <- unique(data$EO) %>% as.character()
+list_df <- list()
+
+for (j in EOs) {
+# choose one EO
+EO <- data %>% filter(EO == j) 
+
+# calculate the avg response to solvent per EO
+before <- EO  %>% filter(stimuli == "acet_before") 
+after <- EO  %>% filter(stimuli == "acet_after") 
+sol<-left_join(before, after, by="leg") 
+sol$response = rowMeans(sol[,c("response.x","response.y")] )
+
+# add the mean response to solvent
+df <- sol %>% dplyr::select(c("leg","response","EO"="EO.x")) %>% mutate("stimuli"="solvent")
+
+list_df[[j]] = df
+}
+
+
+#make a loop for Wilcox test of avg solvent vs each of the doses
+
+# state the variables
+dose = c("0.1","0.25","0.5","1","2.5","5")
+pvalues = vector()
+p_list=list()
+
+EOs <- names(list_df)
+
+for (i in dose) {
+  for (j in EOs) {
+  EO_df <- data %>% filter(EO == j)  %>% filter(stimuli == i) 
+  EO_df <- bind_rows(EO_df,list_df[[j]])
+
+  # calculate the p-val for the difference between the response to solvent and the response to stimuli
+  pval <-  wilcox.test(data=EO_df , response ~ stimuli, paired = FALSE)$p.value
+  pvalues[i] = pval
+  
+  
+  }
+  # adjust the pvalues per EO
+  padj <- p.adjust(pvalues, "BH")
+  wilcox <- data_frame("dose" = dose, "p.value" = pvalues, "padj" = padj, "EO" = EO_df[1,3])
+  p_list[[j]] <- wilcox
+}
+
+
+
+p_list$EO4444
+p_list$EO5714
+class(list_df$"EO4444")
+# somthing is not working, it doesnt run throu all doeses
 ```
 
 ## EAG plot
